@@ -52,7 +52,6 @@ size_t	ft_strlen(const char *s);
 
 #pragma endregion
 
-
 #pragma region [Safe Free]
 
 void	safe_free(void **buf)
@@ -78,6 +77,13 @@ void	safe_free_2d(void ***buf)
 	}
 }
 
+void    safe_close(int *fd)
+{
+    if (*fd != -1)
+        close(*fd);
+    *fd = -1;
+}
+
 #pragma endregion
 
 #pragma region [Error Exit]
@@ -94,7 +100,7 @@ void	error_exit(char *message, char *context)
 
 void	close_exit(int fd, char *message, char *context)
 {
-	close(fd);
+	safe_close(&fd);
 	error_exit(message, context);
 }
 
@@ -264,11 +270,96 @@ void	read_map_file(char *path, t_game *game)
 
 #pragma endregion
 
-#pragma region [Check Map]
+#pragma region [Init Game]
 
-void    check_map(t_game *game)
+void    check_cell(t_game *game, char cell, size_t x, size_t y)
 {
-    
+    static int    player_found = 0;
+    static int    exit_found = 0;
+
+    if (cell == 'P')
+    {
+        if (player_found == 1)
+            free_2d_exit((void ***)&game->map.grid,
+            "Invalid map", "unit_check");
+        player_found = 1;
+        game->player.x = x;
+        game->player.y = y;
+    }
+    else if (cell == 'E')
+    {
+        if (exit_found == 1)
+            free_2d_exit((void ***)&game->map.grid,
+            "Invalid map", "unit_check");
+        exit_found = 1;
+        game->exit.x = x;
+        game->exit.y = y;
+    }
+    else if (cell == 'C')
+        game->collectible.count++;
+    else if (cell != '1' && cell != '0')
+        free_2d_exit((void ***)&game->map.grid, "Invalid map", "unit_check");
+}
+
+void    unit_check(t_game *game)
+{
+    size_t  x;
+    size_t  y;
+
+    y = 0;
+    while (y < game->map.height)
+    {
+        x = 0;
+        while (x < game->map.width)
+        {
+            check_cell(game, game->map.grid[y][x], x, y);
+            x++;
+        }
+        y++;
+    }
+}
+
+void    wall_check(t_game *game)
+{
+    size_t  x;
+    size_t  y;
+
+    x = 0;
+    while (x < game->map.width)
+    {
+        if (game->map.grid[0][x] != '1'
+            || game->map.grid[game->map.height - 1][x] != '1')
+            free_2d_exit((void ***)&game->map.grid ,"Invalid map", "wall_check");
+        x++;
+    }
+    y = 0;
+    while (y < game->map.height)
+    {
+        if (game->map.grid[y][0] != '1'
+            || game->map.grid[y][game->map.width - 1] != '1')
+            free_2d_exit((void ***)&game->map.grid ,"Invalid map", "wall_check");
+        y++;
+    }
+}
+
+void    init_game(t_game *game)
+{
+    size_t height;
+
+    if (game->map.grid[0] == NULL)
+        free_2d_exit((void ***)&game->map.grid ,"Empty map", "check_map");
+    height = 0;
+    game->map.width = ft_strlen(game->map.grid[0]);
+    while (game->map.grid[height])
+    {
+        if (game->map.width != ft_strlen(game->map.grid[height]))
+            free_2d_exit((void ***)&game->map.grid ,"Invalid map", "check_map");
+        height++;
+    }
+    game->map.height = height;
+    wall_check(game);
+    unit_check(game);
+    // TODO map check
 }
 
 #pragma endregion
@@ -282,7 +373,8 @@ int	main(int ac, char **av)
     if (ac != 2)
         error_exit("Invalid number of arguments", "main");
     read_map_file(av[1], &game);
-    check_map(&game);
+    init_game(&game);
+
     safe_free_2d((void ***)&(game.map.grid));
     return (0);
 }
