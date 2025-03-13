@@ -5,40 +5,55 @@
 #include <fcntl.h>
 #include <stdio.h>
 
-# ifndef BUFFER_SIZE
-#  define BUFFER_SIZE 64
-# endif
+#ifndef BUFFER_SIZE
+#define BUFFER_SIZE 64
+#endif
 
-typedef struct s_exit
+typedef struct s_collectible
 {
-	size_t	exit_x;
-	size_t	exit_y;
-	int		exit_status;
-} t_exit;
-
+	size_t	count;
+	//void	image;
+} t_collectible;
 
 typedef struct s_player
 {
+	size_t	x;
+	size_t	y;
 	size_t	move_count;
-	size_t	player_x;
-	size_t	player_y;
-	int		direction;
+	//void	image;
 } t_player;
 
-typedef struct s_so_long
+typedef struct s_exit
 {
-	char		**map;
-	size_t		map_x;
-	size_t		map_y;
-	t_player	player;
-	t_exit		exit;
-} t_so_long;
+	size_t	x;
+	size_t	y;
+	//void	image_open;
+	//void	image_close;
+} t_exit;
+
+typedef struct s_map
+{
+	char	**grid;
+	size_t	height;
+	size_t	width;
+	//void	wall_image;
+	//void	floor_image;
+} t_map;
+
+typedef struct s_game
+{
+	t_collectible	collectible;
+	t_player		player;
+	t_exit			exit;
+	t_map			map;
+} t_game;
 
 size_t	ft_strlen(const char *s);
 
 #pragma endregion
 
-#pragma region [Exit]
+
+#pragma region [Safe Free]
 
 void	safe_free(void **buf)
 {
@@ -48,30 +63,51 @@ void	safe_free(void **buf)
 		*buf = NULL;
 	}
 }
+
 void	safe_free_2d(void ***buf)
 {
-	if(buf && *buf)
+	int		i;
+
+	i = 0;
+	if (buf && *buf)
 	{
-		while (*buf && **buf)
-		{
-			safe_free(**buf);
-			(**buf)++;
-		}
-		safe_free(*buf);
+		while ((*buf)[i])
+			safe_free(&(*buf)[i++]);
+		free(*buf);
+		*buf = NULL;
 	}
 }
 
-void	error_exit(char *str)
+#pragma endregion
+
+#pragma region [Error Exit]
+
+void	error_exit(char *message, char *context)
 {
-	write(2, "Error\n", ft_strlen("Error\n"));
-	write(2, str, ft_strlen(str));
-	exit(1);
+    write(2, "Error\n", 6);
+    write(2, context, ft_strlen(context));
+    write(2, " - ", 3);
+    write(2, message, ft_strlen(message));
+    write(2, "\n", 1);
+    exit(1);
 }
 
-void	free_exit(char *str, void *buf)
+void	close_exit(int fd, char *message, char *context)
 {
-	safe_free(&buf);
-	error_exit(str);
+	close(fd);
+	error_exit(message, context);
+}
+
+void	free_exit(void **buf, char *message, char *context)
+{
+    safe_free(buf);
+    error_exit(message, context);
+}
+
+void	free_2d_exit(void ***buf, char *message, char *context)
+{
+    safe_free_2d(buf);
+    error_exit(message, context);
 }
 
 #pragma endregion
@@ -87,13 +123,16 @@ static void	*ft_memcpy(void *dst, const void *src, size_t n)
 
 static size_t	str_count(char const *str, char sep)
 {
-	size_t	count;
-
+    size_t count;
+    
 	count = 0;
-	while (str && *str)
-		if (*(str++) != sep && (*(str + 1) == sep || !*(str + 1)))
-			count++;
-    return (count);
+    while (str && *str)
+    {
+        if (*str != sep && (*(str + 1) == sep || !*(str + 1)))
+            count++;
+        str++;
+    }
+    return count;
 }
 
 static char	*str_parse(const char *str, char sep)
@@ -112,34 +151,42 @@ static char	*str_parse(const char *str, char sep)
 	return (s);
 }
 
-char	**ft_split_free(char *s, char c)
+static int	fill_split_array(char **split, char *s, char c)
 {
-	char	**split;
-	char	**start;
+    while (*s)
+    {
+        while (*s && *s == c)
+            s++;
+        if (*s)
+        {
+            *split = str_parse(s, c);
+            if (!*split)
+				return (1);
+            split++;
+        }
+        while (*s && *s != c)
+            s++;
+    }
+    *split = NULL;
+	return (0);
+}
 
-	if (!s && !*s)
+char	**split_with_free(char *s, char c)
+{
+    char	**split;
+
+	if (!s)
 		return (NULL);
-	split = (char **)malloc(sizeof(char *) * (str_count(s, c) + 1));
-	if (!split)
-		free_exit("malloc_error on ft_split_free()", s);
-	start = split;
-	while (*s)
+    split = (char **)malloc(sizeof(char *) * (str_count(s, c) + 1));
+    if (!split)
+        free_exit((void **)&s, "Memory allocation failed", "split_with_free");
+    if (fill_split_array(split, s, c) == 1)
 	{
-		while (*s && *s == c)
-			s++;
-		if (*s)
-		{
-			*split = str_parse(s, c);
-			if (!*split)
-				return (free_split(start), NULL); // TODO fix that norm and free
-			split++;
-		}
-		while (*s && *s != c)
-			s++;
+		safe_free((void **)&s);
+		free_2d_exit((void ***)&split, "Memory allocation failed", "str_parse");
 	}
-	*split = NULL;
-	safe_free((void **)&s);
-	return (start);
+    safe_free((void **)&s);
+    return (split);
 }
 
 #pragma endregion
@@ -158,59 +205,70 @@ size_t	ft_strlen(const char *s)
 	return (i);
 }
 
-char	*ft_strjoin_free(char *s1, char *s2)
+char	*strjoin_with_free(char *s1, char *s2)
 {
-	char	*str;
-	size_t	len;
-	size_t	i;
+    char	*str;
+    size_t	len;
+    size_t	i;
+	size_t	j;
 
-	if (!s1 && !s2)
-		return (NULL);
-	len = ft_strlen(s1) + ft_strlen(s2);
-	str = (char *)malloc(len + 1);
-	if (!str)
+    len = ft_strlen(s1) + ft_strlen(s2);
+    str = (char *)malloc(len + 1);
+    if (!str)
 	{
 		safe_free((void **)&s1);
 		return (NULL);
 	}
-	i = 0;
-	if (s1)
-		while (s1[i])
-			*(str++) = (s1[i++]);
-	i = 0;
-	if (s2)
-		while (s2[i])
-			*(str++) = (s2[i++]);
-	*str = '\0';
-	safe_free((void **)&s1);
-	return (str - len);
+    i = 0;
+	j = 0;
+    if (s1)
+        while (s1[i])
+            str[j++] = s1[i++];
+    i = 0;
+    if (s2)
+        while (s2[i])
+            str[j++] = s2[i++];
+    str[j] = '\0';
+    safe_free((void **)&s1);
+    return (str);
 }
 
-char	**read_map(char *path)
+void	read_map_file(char *path, t_game *game)
 {
-	int		fd;
-	char	*map;
-	int		byte_read;
-	char	buffer[BUFFER_SIZE + 1];
+    int		fd;
+    char	*map;
+    int		byte_read;
+    char	buffer[BUFFER_SIZE + 1];
 
-	fd = open(path, O_RDONLY);
-	if (fd == -1)
-		error_exit("open_error on read_map()");
-	map = NULL;
-	while (map == NULL || byte_read > 0)
-	{
-		byte_read = read(fd, buffer, BUFFER_SIZE);
-		if (byte_read == -1 || byte_read == 0)
-			break;
-		buffer[byte_read] = 0;
-		map = ft_strjoin_free(map, buffer);
-	}
-	close(fd);
-	if (byte_read == -1)
-		free_exit("read_error on read_map()", map);
-	if (!map && byte_read != 0)
-		error_exit("malloc_error on read_map()");
-	return (ft_split_free(map, '\n'));
+    fd = open(path, O_RDONLY);
+    if (fd == -1)
+        error_exit("Failed to open file", "read_map_file");
+    map = NULL;
+    while (1)
+    {
+        byte_read = read(fd, buffer, BUFFER_SIZE);
+        if (byte_read == -1 || byte_read == 0)
+            break;
+        buffer[byte_read] = '\0';
+        map = strjoin_with_free(map, buffer);
+		if (!map)
+			close_exit(fd, "Memory allocation failed", "strjoin_with_free");
+    }
+    close(fd);
+    if (byte_read == -1)
+        free_exit((void **)&map, "Failed to read file", "read_map_file");
+    game->map.grid = split_with_free(map, '\n');
+	if (!game->map.grid)
+		error_exit("Empty file", "split_with_free");
+}
+
+#pragma endregion
+
+#pragma region [Check Map]
+
+void    check_map(t_game *game)
+{
+    
 }
 
 #pragma endregion
@@ -219,19 +277,14 @@ char	**read_map(char *path)
 
 int	main(int ac, char **av)
 {
-	t_so_long	so_long;
+    t_game	game;
 
-	if (ac != 2)
-		error_exit("Invalid Input Count");
-	so_long.map = read_map(av[1]);
-	if (!so_long.map)
-		error_exit("malloc_error on ft_split_free()");
-	for (int i = 0; so_long.map[i]; i++)
-	{
-		printf("%s\n", so_long.map[i]);
-		free(so_long.map[i]);
-	}
-	free(so_long.map);
+    if (ac != 2)
+        error_exit("Invalid number of arguments", "main");
+    read_map_file(av[1], &game);
+    check_map(&game);
+    safe_free_2d((void ***)&(game.map.grid));
+    return (0);
 }
 
 #pragma endregion
