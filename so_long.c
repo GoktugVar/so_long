@@ -9,35 +9,39 @@
 #define BUFFER_SIZE 64
 #endif
 
+typedef union u_return
+{
+	int		i;
+	char	*p;
+}	t_return;
+
 typedef struct s_collectible
 {
 	size_t	count;
-	// void	image;
+	void	*img;
 }	t_collectible;
 
 typedef struct s_player
 {
-	size_t	x;
-	size_t	y;
+	size_t	pos;
 	size_t	move_count;
-	// void	image;
+	void	*img;
 }	t_player;
 
 typedef struct s_exit
 {
-	size_t	x;
-	size_t	y;
-	// void	image_open;
-	// void	image_close;
+	void	*img_o;
+	void	*img_c;
 }	t_exit;
 
 typedef struct s_map
 {
-	char	**grid;
-	size_t	height;
+	char	*data;
+	size_t	len;
 	size_t	width;
-	// void	wall_image;
-	// void	floor_image;
+	size_t	height;
+	void	*img_w;
+	void	*img_f;
 }	t_map;
 
 typedef struct s_game
@@ -48,156 +52,9 @@ typedef struct s_game
 	t_map			map;
 }	t_game;
 
-size_t	ft_strlen(const char *s);
-
 #pragma endregion
 
-#pragma region[Safe Free]
-
-void	safe_free(void **buf)
-{
-	if (buf && *buf)
-	{
-		free(*buf);
-		*buf = NULL;
-	}
-}
-
-void	safe_free_2d(void ***buf)
-{
-	int i;
-
-	i = 0;
-	if (buf && *buf)
-	{
-		while ((*buf)[i])
-			safe_free(&(*buf)[i++]);
-		free(*buf);
-		*buf = NULL;
-	}
-}
-
-void	safe_close(int *fd)
-{
-	if (*fd != -1)
-		close(*fd);
-	*fd = -1;
-}
-
-#pragma endregion
-
-#pragma region[Error Exit]
-
-void	error_exit(const char *func, const char *message)
-{
-	write(2, "Error\n", 6);
-	write(2, func, ft_strlen(func));
-	write(2, " - ", 3);
-	write(2, message, ft_strlen(message));
-	write(2, "\n", 1);
-	exit(1);
-}
-
-void	close_exit(int fd, const char *func, const char *message)
-{
-	safe_close(&fd);
-	error_exit(func, message);
-}
-
-void	free_exit(void **buf, const char *func, const char *message)
-{
-	safe_free(buf);
-	error_exit(func, message);
-}
-
-void	free_2d_exit(void ***buf, const char *func, const char *message)
-{
-	safe_free_2d(buf);
-	error_exit(func, message);
-}
-
-#pragma endregion
-
-#pragma region[Split]
-
-static void	*ft_memcpy(void *dst, const void *src, size_t n)
-{
-	while (n--)
-		((unsigned char *)dst)[n] = ((unsigned char *)src)[n];
-	return (dst);
-}
-
-static size_t	str_count(char const *str, char sep)
-{
-	size_t	count;
-
-	count = 0;
-	while (str && *str)
-	{
-		if (*str != sep && (*(str + 1) == sep || !*(str + 1)))
-			count++;
-		str++;
-	}
-	return (count);
-}
-
-static char	*str_parse(const char *str, char sep)
-{
-	int		len;
-	char	*s;
-
-	len = 0;
-	while (str[len] && str[len] != sep)
-		len++;
-	s = (char *)malloc(sizeof(char) * (len + 1));
-	if (!s)
-		return (NULL);
-	ft_memcpy(s, str, len);
-	s[len] = '\0';
-	return (s);
-}
-
-static int	fill_split_array(char **split, char *s, char c)
-{
-	while (*s)
-	{
-		while (*s && *s == c)
-			s++;
-		if (*s)
-		{
-			*split = str_parse(s, c);
-			if (!*split)
-				return (1);
-			split++;
-		}
-		while (*s && *s != c)
-			s++;
-	}
-	*split = NULL;
-	return (0);
-}
-
-char	**split_with_free(char *s, char c)
-{
-	char	**split;
-
-	if (!s)
-		return (NULL);
-	split = (char **)malloc(sizeof(char *) * (str_count(s, c) + 1));
-	if (!split)
-		free_exit((void **)&s, "split_with_free", "Memory allocation failed");
-	if (fill_split_array(split, s, c) == 1)
-	{
-		safe_free((void **)&s);
-		free_2d_exit((void ***)&split, "str_parse", "Memory allocation failed");
-	}
-	safe_free((void **)&s);
-	return (split);
-}
-
-#pragma endregion
-
-#pragma region[Read Map]
+#pragma region[Utils]
 
 size_t	ft_strlen(const char *s)
 {
@@ -211,169 +68,324 @@ size_t	ft_strlen(const char *s)
 	return (i);
 }
 
-char	*strjoin_with_free(char *s1, char *s2)
+void	safe_free(void **buf)
 {
-	char	*str;
-	size_t	len;
-	size_t	i;
-	size_t	j;
-
-	len = ft_strlen(s1) + ft_strlen(s2);
-	str = (char *)malloc(len + 1);
-	if (!str)
+	if (buf && *buf)
 	{
-		safe_free((void **)&s1);
-		return (NULL);
+		free(*buf);
+		*buf = NULL;
 	}
-	i = 0;
-	j = 0;
-	if (s1)
-		while (s1[i])
-			str[j++] = s1[i++];
-	i = 0;
-	if (s2)
-		while (s2[i])
-			str[j++] = s2[i++];
-	str[j] = '\0';
-	safe_free((void **)&s1);
-	return (str);
 }
 
-void	read_map_file(char *path, t_game *game)
+void	error_print(const char *func, const char *message)
 {
-	int		fd;
-	char	*map;
-	int		byte_read;
-	char	buffer[BUFFER_SIZE + 1];
+	static int	first_error = -1;
+	int			i;
 
-	fd = open(path, O_RDONLY);
-	if (fd == -1)
-		error_exit("Failed to open file", "read_map_file");
-	map = NULL;
-	while (1)
+	first_error++;
+	if (first_error == 0)
 	{
-		byte_read = read(fd, buffer, BUFFER_SIZE);
-		if (byte_read == -1 || byte_read == 0)
-			break;
-		buffer[byte_read] = '\0';
-		map = strjoin_with_free(map, buffer);
-		if (!map)
-			close_exit(fd, "Memory allocation failed", "strjoin_with_free");
+		write(2, "Error\n", 6);
+		write(2, message, ft_strlen(message));
+		write(2, "\n→ at [", 10);
 	}
-	close(fd);
-	if (byte_read == -1)
-		free_exit((void **)&map, "Failed to read file", "read_map_file");
-	game->map.grid = split_with_free(map, '\n');
-	if (!game->map.grid)
-		error_exit("Empty file", "split_with_free");
+	else
+	{
+		i = first_error;
+		while (i-- > 0)
+			write(2, " ", 1);
+		write(2, "→ by [", 9);
+	}
+	write(2, func, ft_strlen(func));
+	write(2, "]\n", 2);
+}
+
+t_return	error_handle(const char *func, const char *message, int flag)
+{
+	static t_return	ret = {0};
+
+	error_print(func, message);
+	if (flag & 1)
+		exit(1);
+	return (ret);
 }
 
 #pragma endregion
 
-#pragma region[Init Game]
+#pragma region[Read File]
 
-void	check_cell(t_game *game, char cell, size_t x, size_t y)
+char	*ft_strjoin(const char *s1, const char *s2)
 {
-	static int	player_found = 0;
-	static int	exit_found = 0;
+	char	*new_str;
+	size_t	i;
+	size_t	j;
 
-	if (cell == 'P')
+	if (!s1 && !s2)
+		return (NULL);
+	new_str = malloc(ft_strlen(s1) + ft_strlen(s2) + 1);
+	if (!new_str)
+		return (error_handle("ft_strjoin",
+				"Memory allocation failed", 0).p);
+	i = 0;
+	while (s1 && s1[i])
 	{
-		if (player_found == 1)
-			free_2d_exit((void ***)&game->map.grid,
-						 "Invalid map", "unit_check");
-		player_found = 1;
-		game->player.x = x;
-		game->player.y = y;
+		new_str[i] = s1[i];
+		i++;
 	}
-	else if (cell == 'E')
+	j = 0;
+	while (s2 && s2[j])
 	{
-		if (exit_found == 1)
-			free_2d_exit((void ***)&game->map.grid,
-						 "Invalid map", "unit_check");
-		exit_found = 1;
-		game->exit.x = x;
-		game->exit.y = y;
+		new_str[i + j] = s2[j];
+		j++;
 	}
-	else if (cell == 'C')
-		game->collectible.count++;
-	else if (cell != '1' && cell != '0')
-		free_2d_exit((void ***)&game->map.grid, "Invalid map", "unit_check");
+	new_str[i + j] = '\0';
+	return (new_str);
 }
 
-void	unit_check(t_game *game)
+char	*ft_join_and_free(char *str1, char *str2, int flag)
 {
-	size_t	x;
-	size_t	y;
+	char	*new_str;
 
-	y = 0;
-	while (y < game->map.height)
+	new_str = ft_strjoin(str1, str2);
+	if (flag & 1)
+		safe_free((void **)&str1);
+	if ((flag >> 1) & 1)
+		safe_free((void **)&str2);
+	if (!new_str)
+		error_print("ft_join_and_free", "ft_strjoin returned NULL");
+	return (new_str);
+}
+
+char	*read_content(int fd)
+{
+	ssize_t rlen;
+	char	*result;
+	char	buffer[BUFFER_SIZE + 1];
+
+	result = NULL;
+	while (1)
 	{
-		x = 0;
-		while (x < game->map.width)
+		rlen = read(fd, buffer, BUFFER_SIZE);
+		if (rlen == -1)
 		{
-			check_cell(game, game->map.grid[y][x], x, y);
-			x++;
+			safe_free((void **)&result);
+			return (error_handle("read_content",
+					"Failed to read the file", 0).p);
 		}
-		y++;
+		if (rlen == 0)
+			break;
+		buffer[rlen] = '\0';
+		result = ft_join_and_free(result, buffer, 1);
+		if (!result)
+			return(error_handle("read_content",
+					"ft_join_and_free returned NULL", 0).p);
+	}
+	return (result);
+}
+
+char	*read_file(const char *path)
+{
+	int		fd;
+	char	*result;
+
+	fd = open(path, O_RDONLY);
+	if (fd == -1)
+		return(error_handle("read_file", "Failed to open the file", 0).p);
+	result = read_content(fd);
+	if (!result)
+		error_print("read_file", "read_content returned NULL.");
+	close(fd);
+	return (result);
+}
+
+#pragma endregion
+
+#pragma region[Check Path]
+
+char	*ft_strdup(char *s1)
+{
+	char	*dst;
+	int		i;
+
+	if (!s1)
+		return (NULL);
+	dst = (char *)malloc(ft_strlen(s1) + 1);
+	if (dst == NULL)
+		return (error_handle("ft_strdup",
+				"Memory allocation failed", 0).p);
+	i = 0;
+	while (s1[i])
+	{
+		dst[i] = s1[i];
+		i++;
+	}
+	dst[i] = '\0';
+	return (dst);
+}
+
+void	look_for_path(char *map, size_t pos, size_t width)
+{
+	size_t	dst;
+	
+	map[pos] = '1';
+	dst = pos - width - 1;
+	if (map[dst] != '1')
+		look_for_path(map, dst, width);
+	dst = pos - 1;
+	if (map[dst] != '1')
+		look_for_path(map, dst, width);
+	dst = pos + width + 1;
+	if (map[dst] != '1')
+		look_for_path(map, dst, width);
+	dst = pos + 1;
+	if (map[dst] != '1')
+		look_for_path(map, dst, width);
+}
+
+int	look_map(char *map)
+{
+	size_t	i;
+
+	i = 0;
+	while (map[i])
+	{
+		if (map[i] != '1' && map[i] == '0' && map[i] != '-') // TODO fix - to new line
+			return (error_handle("look_map", "Path not found", 0).i);
+		i++;
+	}
+	return (1);
+}
+
+int	check_path(t_game *game)
+{
+	char	*map;
+
+	map = ft_strdup(game->map.data);
+	if (map == NULL)
+		return (error_handle("check_path", "ft_strdup returned NULL", 0).i);
+	look_for_path(map, game->player.pos, game->map.width);
+	if (look_map(map) == 0)
+	{
+		free(map);
+		return (error_handle("check_path", "No Path", 0).i);
+	}
+	free(map);
+	return (1);
+}
+
+#pragma endregion
+
+#pragma region[Check Map]
+
+void	set_player_pos(t_game *game)
+{
+	char	*map;
+	int		i;
+
+	map = game->map.data;
+	i = 0;
+	while (map[i])
+	{
+		if (map[i] == 'P')
+		{
+			game->player.pos = i;
+			return ;
+		}
+		i++;
 	}
 }
 
-void	wall_check(t_game *game)
+int	check_char(char c, t_game *game)
 {
-	size_t	x;
-	size_t	y;
+    static int	exit_count = 0;
+    static int	player_count = 0;
 
-	x = 0;
-	while (x < game->map.width)
+	if (c == 'C')
+		game->collectible.count++;
+	else if (c == 'E' && ++exit_count > 1)
+		return (error_handle("check_char", "Multiple exits detected", 0).i);
+	else if (c == 'P' && ++player_count > 1)
+		return (error_handle("check_char", "Multiple players detected", 0).i);
+	else if (c == '\0')
 	{
-		if (game->map.grid[0][x] != '1' || game->map.grid[game->map.height - 1][x] != '1')
-			free_2d_exit((void ***)&game->map.grid, "Invalid map", "wall_check");
-		x++;
+		if (exit_count == 0)
+			return (error_handle("check_char", "No exit found", 0).i);
+		if (player_count == 0)
+			return (error_handle("check_char", "No player found", 0).i);
+		if (game->collectible.count == 0)
+			return (error_handle("check_char", "No collectible found", 0).i);
 	}
-	y = 0;
-	while (y < game->map.height)
-	{
-		if (game->map.grid[y][0] != '1' || game->map.grid[y][game->map.width - 1] != '1')
-			free_2d_exit((void ***)&game->map.grid, "Invalid map", "wall_check");
-		y++;
-	}
+	else if (c != '1' && c != '0' && c != 'E' && c != 'P')
+		return (error_handle("check_char", "Invalid character in map", 0).i);
+	return (1);
 }
 
-void	init_game(t_game *game)
+size_t check_line(char *line, int flag, t_game *game)
 {
-	size_t	height;
+	size_t	i;
 
-	if (game->map.grid[0] == NULL)
-		free_2d_exit((void ***)&game->map.grid, "Empty map", "check_map");
-	height = 0;
-	game->map.width = ft_strlen(game->map.grid[0]);
-	while (game->map.grid[height])
+	i = 0;
+	while (line[i] != '-' && line[i] != '\0') // TODO fix - to new line
 	{
-		if (game->map.width != ft_strlen(game->map.grid[height]))
-			free_2d_exit((void ***)&game->map.grid, "Invalid map", "check_map");
-		height++;
+		if (flag == 0 && line[i] != '1')
+			return(error_handle("check_line", "Border must be '1'", 0).i);
+		if (flag == 1 && check_char(line[i], game) == 0)
+			return(error_handle("check_line", "Invalid char in map", 0).i);
+		i++;
 	}
-	game->map.height = height;
-	wall_check(game);
-	unit_check(game);
-	// TODO map check
+	if (line[0] != '1' || line[i - 1] != '1')
+		return (error_handle("check_line", "Border must be '1'", 0).i);
+	return (i);
+}
+
+int	check_map(t_game *game)
+{
+	char	*map;
+
+	map = game->map.data;
+	game->collectible.count = 0;
+	game->map.width = check_line(map, 0, game);
+	if (game->map.width == 0)
+		return (error_handle("check_map", "Map Error", 0).i);
+	game->map.height = 0;
+	while (*map)
+	{
+		if (check_line(map, 1, game) != game->map.width)
+			return (error_handle("check_map", "Inconsistent line length", 0).i);
+		map += game->map.width;
+		if (*map == '-') // TODO fix - to new line
+			map++;
+		game->map.height++;
+	}
+	if (check_char('\0', game) == 0)
+		return (error_handle("check_map", "Map Error", 0).i);
+	game->map.len = ft_strlen(game->map.data);
+	set_player_pos(game);
+	if (check_path(game) == 0)
+		return (error_handle("check_map", "No Path", 0).i);
+	return (1);
 }
 
 #pragma endregion
 
 #pragma region[Main]
 
-int main(int ac, char **av)
+int	main(int ac, char **av)
 {
 	t_game	game;
 
 	if (ac != 2)
-		error_exit("Invalid number of arguments", "main");
-	read_map_file(av[1], &game);
-	init_game(&game);
-
-	safe_free_2d((void ***)&(game.map.grid));
+		error_handle("main", "Invalid number of arguments", 1);
+	game.map.data = read_file(av[1]);
+	if (game.map.data == NULL)
+		error_handle("main", "read_file returned NULL", 1);
+	if (check_map(&game) == 0)
+	{
+		safe_free((void **)&game.map.data);
+		error_handle("main", "Invalid map", 1);
+	}
+	// Start Game
+	safe_free((void **)&game.map.data);
 	return (0);
 }
 
