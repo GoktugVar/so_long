@@ -249,7 +249,7 @@ int	look_map(char *map)
 	i = 0;
 	while (map[i])
 	{
-		if (map[i] != '1' && map[i] == '0' && map[i] != '-') // TODO fix - to new line
+		if (map[i] != '1' && map[i] == '0' && map[i] != '\n')
 			return (error_handle("look_map", "Path not found", 0).i);
 		i++;
 	}
@@ -325,7 +325,7 @@ size_t check_line(char *line, int flag, t_game *game)
 	size_t	i;
 
 	i = 0;
-	while (line[i] != '-' && line[i] != '\0') // TODO fix - to new line
+	while (line[i] != '\n' && line[i] != '\0')
 	{
 		if (flag == 0 && line[i] != '1')
 			return(error_handle("check_line", "Border must be '1'", 0).i);
@@ -333,6 +333,8 @@ size_t check_line(char *line, int flag, t_game *game)
 			return(error_handle("check_line", "Invalid char in map", 0).i);
 		i++;
 	}
+	if (i == 0)
+		return (error_handle("check_line", "Empty line", 0).i);
 	if (line[0] != '1' || line[i - 1] != '1')
 		return (error_handle("check_line", "Border must be '1'", 0).i);
 	return (i);
@@ -353,7 +355,7 @@ int	check_map(t_game *game)
 		if (check_line(map, 1, game) != game->map.width)
 			return (error_handle("check_map", "Inconsistent line length", 0).i);
 		map += game->map.width;
-		if (*map == '-') // TODO fix - to new line
+		if (*map == '\n')
 			map++;
 		game->map.height++;
 	}

@@ -1,3 +1,4 @@
+/*
 #pragma region[Header]
 
 #include <unistd.h>
@@ -184,3 +185,5 @@ int check_map(t_game *game)
 }
 
 #pragma endregion
+
+*/
