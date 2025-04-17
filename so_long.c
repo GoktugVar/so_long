@@ -70,7 +70,7 @@ typedef struct s_game
 	t_map			map;
 	t_exit			exit;
 	t_player		player;
-	t_img			img_list;
+	t_img			*img_list;
 	t_collectible	collectible;
 }	t_game;
 
@@ -458,66 +458,29 @@ t_img	*add_node(t_img **head, t_img *new_node)
 	return (new_node);
 }
 
-t_img	*find_node(t_img *head, void *img_ptr)
-{
-	t_img	*temp;
-
-	temp = head;
-	while (temp != NULL)
-	{
-		if (temp->img_ptr == img_ptr)
-			return (temp);
-		temp = temp->next;
-		if (temp == head)
-			break ;
-	}
-	return (NULL);
-}
-
-size_t	get_node_count(t_img *head)
-{
-	t_img	*temp;
-	size_t	size;
-
-	if (!head)
-		return (0);
-	size = 1;
-	temp = head;
-	while (temp->next != head)
-	{
-		size++;
-		temp = temp->next;
-	}
-	return (size);
-}
-
-void	free_list(t_img **head)
+void	destroy_images(t_game *game)
 {
 	t_img	*temp;
 	t_img	*current;
 
-	if (head == NULL || *head == NULL)
+	if (game->img_list == NULL)
 		return ;
-	current = *head;
-	while (current->next != *head)
+	current = game->img_list;
+	while (current->next != game->img_list)
 	{
-		temp = current;
+		temp = current->next;
 		current = current->next;
+		mlx_destroy_image(game->mlx.mlx_ptr, temp->img_ptr);
 		free(temp);
 	}
+	mlx_destroy_image(game->mlx.mlx_ptr, current->img_ptr);
 	free(current);
-	*head = NULL;
+	game->img_list = NULL;
 }
+
 #pragma endregion
 
-#pragma region[Start Game]
-
-int	set_images(t_game *game)
-{	
-	game->map.img_f = mlx_xpm_file_to_image(game->mlx.mlx_ptr,
-		"./img/floor.xpm", &game->map.width, &game->map.height);
-	return (1);
-}
+#pragma region[Key Hook]
 
 int key_hook(int keycode, t_game *game)
 {
@@ -534,6 +497,46 @@ int key_hook(int keycode, t_game *game)
 	return (0);
 }
 
+#pragma endregion
+
+#pragma region[Set Images]
+
+int	init_image(void **img_ptr, char *path, t_game *game)
+{
+	int width;
+	int height;
+
+	*img_ptr = add_node(&game->img_list, create_node(mlx_xpm_file_to_image(game->mlx.mlx_ptr, path, &width, &height)))->img_ptr;
+	if (*img_ptr == NULL)
+		return (error_handle("init_image", "Failed to load image", 0).i);
+	return (1);
+}
+
+int	init_walls(char *path, t_game *game, int phase)
+{
+	if (phase == 9)
+	{
+		printf("phase = %d\n", phase);
+		return (1);
+	}
+	path[9 + phase] = '0';
+	init_walls(path, game, phase + 1);
+	path[9 + phase] = '1';
+	init_walls(path, game, phase + 1);
+	return (1);
+}
+
+int	set_images(t_game *game)
+{
+	if (init_image(&game->map.img_f, "textures/f.xpm", game) == 0)
+		return (0);
+	return (1);
+}
+
+#pragma endregion
+
+#pragma region[Start Game]
+
 void	set_events(t_game *game)
 {
 	mlx_hook(game->mlx.win_ptr, KeyPress, KeyPressMask, key_hook, game);
@@ -542,6 +545,7 @@ void	set_events(t_game *game)
 
 void	mlx_free(t_game *game)
 {
+	destroy_images(game);
 	if (game->mlx.win_ptr)
 		mlx_destroy_window(game->mlx.mlx_ptr, game->mlx.win_ptr);
 	if (game->mlx.mlx_ptr)
@@ -555,20 +559,20 @@ int	start_mlx(t_game *game)
 {
 	game->mlx.mlx_ptr = mlx_init();
 	if (game->mlx.mlx_ptr == NULL)
-		return error_handle("start_game", "Failed to initialize MLX", 0).i;
+		return (error_handle("start_game", "Failed to initialize MLX", 0).i);
 	game->mlx.win_ptr = mlx_new_window(game->mlx.mlx_ptr,
 		game->map.width * 64, game->map.height * 64, "So Long");
 	if (game->mlx.win_ptr == NULL)
 	{
 		mlx_destroy_display(game->mlx.mlx_ptr);
 		free(game->mlx.mlx_ptr);
-		return error_handle("start_game", "Failed to create window", 0).i;
+		return (error_handle("start_game", "Failed to create window", 0).i);
 	}
 	if (set_images(game) == 1)
 	{
 		set_events(game);
 		mlx_put_image_to_window(game->mlx.mlx_ptr, game->mlx.win_ptr,
-			game->map.img_w, 0, 0);
+			game->map.img_f, 0, 0);
 		mlx_loop(game->mlx.mlx_ptr);
 	}
 	else
