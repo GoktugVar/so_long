@@ -1,5 +1,8 @@
 #pragma region[Header]
 
+#include "minilibx/mlx.h"
+#include <X11/keysym.h>
+#include <X11/X.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -9,11 +12,23 @@
 #define BUFFER_SIZE 64
 #endif
 
+#ifndef BUFFER_SIZE
+#define BUFFER_SIZE 64
+#endif
+
+
 typedef union u_return
 {
 	int		i;
 	char	*p;
 }	t_return;
+
+typedef struct s_img
+{
+	void			*img_ptr;
+	struct s_img	*prev;
+	struct s_img 	*next;
+}	t_img;
 
 typedef struct s_collectible
 {
@@ -40,21 +55,40 @@ typedef struct s_map
 	size_t	len;
 	size_t	width;
 	size_t	height;
-	void	*img_w;
 	void	*img_f;
+	void	*img_w[2][2][2][2][2][2][2][2][2];
 }	t_map;
 
+typedef struct s_mlx
+{
+	void	*mlx_ptr;
+	void	*win_ptr;
+}	t_mlx;
 typedef struct s_game
 {
-	t_collectible	collectible;
-	t_player		player;
-	t_exit			exit;
+	t_mlx			mlx;
 	t_map			map;
+	t_exit			exit;
+	t_player		player;
+	t_img			img_list;
+	t_collectible	collectible;
 }	t_game;
 
 #pragma endregion
 
 #pragma region[Utils]
+
+void	*ft_memset(void *b, int c, size_t len)
+{
+	char	*s;
+
+	if (!b)
+		return (NULL);
+	s = (char *)b;
+	while (0 < len--)
+		s[len] = (char)c;
+	return (s);
+}
 
 size_t	ft_strlen(const char *s)
 {
@@ -183,11 +217,36 @@ char	*read_content(int fd)
 	return (result);
 }
 
+int	check_extension(const char *path)
+{
+	size_t	len;
+	const char	*file;
+
+	if (!path)
+		return (error_handle("check_extension", "Path is NULL", 0).i);
+	len = ft_strlen(path);
+	while (len--)
+		if (path[len] == '/')
+			break;
+	file = &path[len + 1];
+	len = ft_strlen(file);
+	if (len <= 4)
+		return (error_handle("check_extension", "Invalid file extension", 0).i);
+	if (file[len - 4] == '.' &&
+		file[len - 3] == 'b' &&
+		file[len - 2] == 'e' &&
+		file[len - 1] == 'r')
+		return (1);
+	return (error_handle("check_extension", "Invalid file extension", 0).i);
+}
+
 char	*read_file(const char *path)
 {
 	int		fd;
 	char	*result;
 
+	if (!check_extension(path))
+		return (error_handle("read_file", "Invalid file extension", 0).p);
 	fd = open(path, O_RDONLY);
 	if (fd == -1)
 		return(error_handle("read_file", "Failed to open the file", 0).p);
@@ -225,21 +284,13 @@ char	*ft_strdup(char *s1)
 
 void	look_for_path(char *map, size_t pos, size_t width)
 {
-	size_t	dst;
-	
+	if (map[pos] == '1' || map[pos] == '\n')
+		return ;
 	map[pos] = '1';
-	dst = pos - width - 1;
-	if (map[dst] != '1')
-		look_for_path(map, dst, width);
-	dst = pos - 1;
-	if (map[dst] != '1')
-		look_for_path(map, dst, width);
-	dst = pos + width + 1;
-	if (map[dst] != '1')
-		look_for_path(map, dst, width);
-	dst = pos + 1;
-	if (map[dst] != '1')
-		look_for_path(map, dst, width);
+	look_for_path(map, pos - width - 1, width);
+	look_for_path(map, pos - 1, width);
+	look_for_path(map, pos + width + 1, width);
+	look_for_path(map, pos + 1, width);
 }
 
 int	look_map(char *map)
@@ -249,7 +300,7 @@ int	look_map(char *map)
 	i = 0;
 	while (map[i])
 	{
-		if (map[i] != '1' && map[i] == '0' && map[i] != '\n')
+		if (map[i] != '1' && map[i] != '0' && map[i] != '\n')
 			return (error_handle("look_map", "Path not found", 0).i);
 		i++;
 	}
@@ -359,12 +410,173 @@ int	check_map(t_game *game)
 			map++;
 		game->map.height++;
 	}
+	check_line(map - game->map.width, 0, game);
 	if (check_char('\0', game) == 0)
 		return (error_handle("check_map", "Map Error", 0).i);
 	game->map.len = ft_strlen(game->map.data);
 	set_player_pos(game);
 	if (check_path(game) == 0)
 		return (error_handle("check_map", "No Path", 0).i);
+	return (1);
+}
+
+#pragma endregion
+
+#pragma region[Image Nodes]
+
+t_img	*create_node(void *img_ptr)
+{
+	t_img	*new_node;
+
+	new_node = (t_img *)malloc(sizeof(t_img));
+	if (!new_node)
+		return (NULL);
+	new_node->img_ptr = img_ptr;
+	new_node->next = NULL;
+	new_node->prev = NULL;
+	return (new_node);
+}
+
+t_img	*add_node(t_img **head, t_img *new_node)
+{
+	t_img	*last;
+
+	if (new_node == NULL)
+		return (*head);
+	if (*head == NULL)
+	{
+		*head = new_node;
+		new_node->next = new_node;
+		new_node->prev = new_node;
+		return (new_node);
+	}
+	last = (*head)->prev;
+	last->next = new_node;
+	new_node->prev = last;
+	new_node->next = *head;
+	(*head)->prev = new_node;
+	return (new_node);
+}
+
+t_img	*find_node(t_img *head, void *img_ptr)
+{
+	t_img	*temp;
+
+	temp = head;
+	while (temp != NULL)
+	{
+		if (temp->img_ptr == img_ptr)
+			return (temp);
+		temp = temp->next;
+		if (temp == head)
+			break ;
+	}
+	return (NULL);
+}
+
+size_t	get_node_count(t_img *head)
+{
+	t_img	*temp;
+	size_t	size;
+
+	if (!head)
+		return (0);
+	size = 1;
+	temp = head;
+	while (temp->next != head)
+	{
+		size++;
+		temp = temp->next;
+	}
+	return (size);
+}
+
+void	free_list(t_img **head)
+{
+	t_img	*temp;
+	t_img	*current;
+
+	if (head == NULL || *head == NULL)
+		return ;
+	current = *head;
+	while (current->next != *head)
+	{
+		temp = current;
+		current = current->next;
+		free(temp);
+	}
+	free(current);
+	*head = NULL;
+}
+#pragma endregion
+
+#pragma region[Start Game]
+
+int	set_images(t_game *game)
+{	
+	game->map.img_f = mlx_xpm_file_to_image(game->mlx.mlx_ptr,
+		"./img/floor.xpm", &game->map.width, &game->map.height);
+	return (1);
+}
+
+int key_hook(int keycode, t_game *game)
+{
+	if (keycode == XK_Escape)
+		mlx_loop_end(game->mlx.mlx_ptr);
+	else if (keycode == 119)
+		;
+	else if (keycode == 115)
+		;
+	else if (keycode == 97)	
+		;
+	else if (keycode == 100)
+	{}
+	return (0);
+}
+
+void	set_events(t_game *game)
+{
+	mlx_hook(game->mlx.win_ptr, KeyPress, KeyPressMask, key_hook, game);
+	mlx_hook(game->mlx.win_ptr, 17, 1L << 17, mlx_loop_end, game->mlx.mlx_ptr);
+}
+
+void	mlx_free(t_game *game)
+{
+	if (game->mlx.win_ptr)
+		mlx_destroy_window(game->mlx.mlx_ptr, game->mlx.win_ptr);
+	if (game->mlx.mlx_ptr)
+	{
+		mlx_destroy_display(game->mlx.mlx_ptr);
+		free(game->mlx.mlx_ptr);
+	}
+}
+
+int	start_mlx(t_game *game)
+{
+	game->mlx.mlx_ptr = mlx_init();
+	if (game->mlx.mlx_ptr == NULL)
+		return error_handle("start_game", "Failed to initialize MLX", 0).i;
+	game->mlx.win_ptr = mlx_new_window(game->mlx.mlx_ptr,
+		game->map.width * 64, game->map.height * 64, "So Long");
+	if (game->mlx.win_ptr == NULL)
+	{
+		mlx_destroy_display(game->mlx.mlx_ptr);
+		free(game->mlx.mlx_ptr);
+		return error_handle("start_game", "Failed to create window", 0).i;
+	}
+	if (set_images(game) == 1)
+	{
+		set_events(game);
+		mlx_put_image_to_window(game->mlx.mlx_ptr, game->mlx.win_ptr,
+			game->map.img_w, 0, 0);
+		mlx_loop(game->mlx.mlx_ptr);
+	}
+	else
+	{
+		mlx_free(game);
+		return error_handle("start_game", "Failed to set images", 0).i;
+	}
+	mlx_free(game);
 	return (1);
 }
 
@@ -378,6 +590,7 @@ int	main(int ac, char **av)
 
 	if (ac != 2)
 		error_handle("main", "Invalid number of arguments", 1);
+	ft_memset(&game, 0, sizeof(t_game));
 	game.map.data = read_file(av[1]);
 	if (game.map.data == NULL)
 		error_handle("main", "read_file returned NULL", 1);
@@ -386,7 +599,11 @@ int	main(int ac, char **av)
 		safe_free((void **)&game.map.data);
 		error_handle("main", "Invalid map", 1);
 	}
-	// Start Game
+	if (start_mlx(&game) == 0)
+	{
+		safe_free((void **)&game.map.data);
+		error_handle("main", "Failed to start game", 1);
+	}
 	safe_free((void **)&game.map.data);
 	return (0);
 }
