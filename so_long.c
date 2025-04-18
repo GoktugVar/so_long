@@ -12,8 +12,8 @@
 #define BUFFER_SIZE 64
 #endif
 
-#ifndef BUFFER_SIZE
-#define BUFFER_SIZE 64
+#ifndef PIXEL_SIZE
+#define PIXEL_SIZE 128
 #endif
 
 
@@ -460,41 +460,22 @@ t_img	*add_node(t_img **head, t_img *new_node)
 
 void	destroy_images(t_game *game)
 {
-	t_img	*temp;
 	t_img	*current;
+	t_img	*to_free;
 
 	if (game->img_list == NULL)
 		return ;
-	current = game->img_list;
-	while (current->next != game->img_list)
+	current = game->img_list->next;
+	while (current != game->img_list)
 	{
-		temp = current->next;
+		to_free = current;
 		current = current->next;
-		mlx_destroy_image(game->mlx.mlx_ptr, temp->img_ptr);
-		free(temp);
+		mlx_destroy_image(game->mlx.mlx_ptr, to_free->img_ptr);
+		free(to_free);
 	}
-	mlx_destroy_image(game->mlx.mlx_ptr, current->img_ptr);
-	free(current);
+	mlx_destroy_image(game->mlx.mlx_ptr, game->img_list->img_ptr);
+	free(game->img_list);
 	game->img_list = NULL;
-}
-
-#pragma endregion
-
-#pragma region[Key Hook]
-
-int key_hook(int keycode, t_game *game)
-{
-	if (keycode == XK_Escape)
-		mlx_loop_end(game->mlx.mlx_ptr);
-	else if (keycode == 119)
-		;
-	else if (keycode == 115)
-		;
-	else if (keycode == 97)	
-		;
-	else if (keycode == 100)
-	{}
-	return (0);
 }
 
 #pragma endregion
@@ -503,12 +484,22 @@ int key_hook(int keycode, t_game *game)
 
 int	init_image(void **img_ptr, char *path, t_game *game)
 {
-	int width;
-	int height;
+	int		width;
+	int		height;
+	void	*img;
+	t_img	*node;
 
-	*img_ptr = add_node(&game->img_list, create_node(mlx_xpm_file_to_image(game->mlx.mlx_ptr, path, &width, &height)))->img_ptr;
-	if (*img_ptr == NULL)
+	img = mlx_xpm_file_to_image(game->mlx.mlx_ptr, path, &width, &height);
+	if (img == NULL)
 		return (error_handle("init_image", "Failed to load image", 0).i);
+	node = create_node(img);
+	if (node == NULL)
+	{
+		mlx_destroy_image(game->mlx.mlx_ptr, img);
+		return (error_handle("init_image", "Failed to create image node", 0).i);
+	}
+	add_node(&game->img_list, node);
+	*img_ptr = img;
 	return (1);
 }
 
@@ -516,26 +507,148 @@ int	init_walls(char *path, t_game *game, int phase)
 {
 	if (phase == 9)
 	{
-		printf("phase = %d\n", phase);
-		return (1);
+    	return init_image(
+        	&game->map.img_w[path[9] - '0'][path[10] - '0'][path[11] - '0']
+            	[path[12] - '0'][path[13] - '0'][path[14] - '0'][path[15] - '0']
+				[path[16] - '0'][path[17] - '0'], path, game);
 	}
 	path[9 + phase] = '0';
-	init_walls(path, game, phase + 1);
+	if (init_walls(path, game, phase + 1) == 0)
+	{
+		if (phase == 0)
+			return (error_handle("init_walls", "Failed to load walls", 0).i);
+		return (0);
+	}
 	path[9 + phase] = '1';
-	init_walls(path, game, phase + 1);
+	if (init_walls(path, game ,phase + 1) == 0)
+	{
+		if (phase == 0)
+			return (error_handle("init_walls", "Failed to load walls", 0).i);
+		return (0);
+	}
 	return (1);
 }
 
 int	set_images(t_game *game)
 {
-	if (init_image(&game->map.img_f, "textures/f.xpm", game) == 0)
-		return (0);
+	char *path;
+
+	path = ft_strdup("textures/000000000.xpm");
+	if (path == NULL)
+		return (error_handle("set_images", "ft_strdup returned NULL", 0).i);
+	if (init_image(&game->map.img_f, "textures/f.xpm", game) == 0
+		|| init_image(&game->player.img, "textures/p.xpm", game) == 0
+		|| init_image(&game->collectible.img, "textures/c.xpm", game) == 0
+		|| init_image(&game->exit.img_c, "textures/ec.xpm", game) == 0
+		|| init_image(&game->exit.img_o, "textures/eo.xpm", game) == 0
+		|| init_walls(path, game, 0) == 0)
+	{
+		free(path);
+		return (error_handle("set_images", "Failed to set images", 0).i);
+	}
+	free(path);
 	return (1);
 }
 
 #pragma endregion
 
-#pragma region[Start Game]
+#pragma region[Print Map]
+
+void	*get_cell(t_game *game, int i)
+{
+	if (game->map.data[i] == '1')
+		return (game->map.img_w[0][0][0][0][0][0][0][0][0]);
+	if (game->map.data[i] == 'P')
+		return (game->player.img);
+	if (game->map.data[i] == 'C')
+		return (game->collectible.img);
+	if (game->map.data[i] == 'E')
+		return (game->exit.img_c);
+	else
+		return (game->map.img_f);
+}
+
+void print_map(t_game *game)
+{
+	int		i;
+	int		pos_x;
+	int		pos_y;
+
+	i = 0;
+	pos_x = 0;
+	pos_y = 0;
+	while (game->map.data[i])
+	{
+		if (game->map.data[i] == '\n')
+		{
+			pos_x = 0;
+			pos_y += PIXEL_SIZE;
+			i++;
+			continue ;
+		}
+		else
+		{
+			mlx_put_image_to_window(game->mlx.mlx_ptr,
+				game->mlx.win_ptr, get_cell(game, i), pos_x, pos_y);
+			pos_x += PIXEL_SIZE;
+			if (game->map.data[i] == 'P')
+				game->map.data[i] = '0';
+		}
+		i++;
+	}
+}
+
+#pragma endregion
+
+#pragma region[Key Hook]
+
+void check_move(t_game *game, int dst)
+{
+	if (game->map.data[dst] != '1')
+	{
+		game->player.move_count++;
+		printf("Move count: %zu\n", game->player.move_count);
+		if (game->map.data[dst] == 'C')
+		{
+			game->map.data[dst] = '0';
+			game->collectible.count--;
+		}
+		if (game->map.data[dst] == 'E' && game->collectible.count == 0)
+		{
+			printf("You win!\n");
+			mlx_loop_end(game->mlx.mlx_ptr);
+			return ;
+		}
+		mlx_put_image_to_window(game->mlx.mlx_ptr,
+			game->mlx.win_ptr, get_cell(game, game->player.pos), 
+			(game->player.pos % (game->map.width + 1)) * PIXEL_SIZE,
+			(game->player.pos / (game->map.width + 1)) * PIXEL_SIZE);
+		game->player.pos = dst;
+		mlx_put_image_to_window(game->mlx.mlx_ptr,
+			game->mlx.win_ptr, game->player.img, 
+			(game->player.pos % (game->map.width + 1)) * PIXEL_SIZE,
+			(game->player.pos / (game->map.width + 1)) * PIXEL_SIZE);
+	}
+}
+
+int key_hook(int keycode, t_game *game)
+{
+	if (keycode == XK_Escape)
+		mlx_loop_end(game->mlx.mlx_ptr);
+	else if (keycode == 119)
+		check_move(game, game->player.pos - game->map.width - 1);
+	else if (keycode == 115)
+		check_move(game, game->player.pos + game->map.width + 1);
+	else if (keycode == 97)	
+		check_move(game, game->player.pos - 1);
+	else if (keycode == 100)
+		check_move(game, game->player.pos + 1);
+	return (0);
+}
+
+#pragma endregion
+
+#pragma region[Start MLX]
 
 void	set_events(t_game *game)
 {
@@ -555,33 +668,28 @@ void	mlx_free(t_game *game)
 	}
 }
 
-int	start_mlx(t_game *game)
+int start_mlx(t_game *game)
 {
-	game->mlx.mlx_ptr = mlx_init();
-	if (game->mlx.mlx_ptr == NULL)
-		return (error_handle("start_game", "Failed to initialize MLX", 0).i);
+    game->mlx.mlx_ptr = mlx_init();
+    if (!game->mlx.mlx_ptr)
+        return (error_handle("start_mlx", "Failed to initialize MLX", 0).i);
+    if (!set_images(game))
+    {
+        mlx_free(game);
+        return (error_handle("start_mlx", "Failed to set images", 0).i);
+    }
 	game->mlx.win_ptr = mlx_new_window(game->mlx.mlx_ptr,
-		game->map.width * 64, game->map.height * 64, "So Long");
-	if (game->mlx.win_ptr == NULL)
-	{
-		mlx_destroy_display(game->mlx.mlx_ptr);
-		free(game->mlx.mlx_ptr);
-		return (error_handle("start_game", "Failed to create window", 0).i);
-	}
-	if (set_images(game) == 1)
-	{
-		set_events(game);
-		mlx_put_image_to_window(game->mlx.mlx_ptr, game->mlx.win_ptr,
-			game->map.img_f, 0, 0);
-		mlx_loop(game->mlx.mlx_ptr);
-	}
-	else
-	{
-		mlx_free(game);
-		return error_handle("start_game", "Failed to set images", 0).i;
-	}
-	mlx_free(game);
-	return (1);
+		game->map.width * PIXEL_SIZE, game->map.height * PIXEL_SIZE, "So Long");
+    if (!game->mlx.win_ptr)
+    {
+        mlx_free(game);
+        return (error_handle("start_mlx", "Failed to create window", 0).i);
+    }
+    set_events(game);
+    print_map(game);
+    mlx_loop(game->mlx.mlx_ptr);
+    mlx_free(game);
+    return (1);
 }
 
 #pragma endregion
