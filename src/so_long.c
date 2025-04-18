@@ -1,80 +1,12 @@
-#pragma region[Header]
+#include "../inc/so_long.h"
 
-#include "minilibx/mlx.h"
-#include <X11/keysym.h>
-#include <X11/X.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <stdio.h>
-
-#ifndef BUFFER_SIZE
-#define BUFFER_SIZE 64
-#endif
-
-#ifndef PIXEL_SIZE
-#define PIXEL_SIZE 128
-#endif
-
-
-typedef union u_return
-{
-	int		i;
-	char	*p;
-}	t_return;
-
-typedef struct s_img
-{
-	void			*img_ptr;
-	struct s_img	*prev;
-	struct s_img 	*next;
-}	t_img;
-
-typedef struct s_collectible
-{
-	size_t	count;
-	void	*img;
-}	t_collectible;
-
-typedef struct s_player
-{
-	size_t	pos;
-	size_t	move_count;
-	void	*img;
-}	t_player;
-
-typedef struct s_exit
-{
-	void	*img_o;
-	void	*img_c;
-}	t_exit;
-
-typedef struct s_map
-{
-	char	*data;
-	size_t	len;
-	size_t	width;
-	size_t	height;
-	void	*img_f;
-	void	*img_w[2][2][2][2][2][2][2][2][2];
-}	t_map;
-
-typedef struct s_mlx
-{
-	void	*mlx_ptr;
-	void	*win_ptr;
-}	t_mlx;
-typedef struct s_game
-{
-	t_mlx			mlx;
-	t_map			map;
-	t_exit			exit;
-	t_player		player;
-	t_img			*img_list;
-	t_collectible	collectible;
-}	t_game;
-
-#pragma endregion
+# include "../minilibx/mlx.h"
+# include <X11/keysym.h>
+# include <X11/X.h>
+# include <unistd.h>
+# include <stdlib.h>
+# include <fcntl.h>
+# include <stdio.h>
 
 #pragma region[Utils]
 
@@ -534,6 +466,7 @@ int	set_images(t_game *game)
 	char *path;
 
 	path = ft_strdup("textures/000000000.xpm");
+	path = 
 	if (path == NULL)
 		return (error_handle("set_images", "ft_strdup returned NULL", 0).i);
 	if (init_image(&game->map.img_f, "textures/f.xpm", game) == 0
