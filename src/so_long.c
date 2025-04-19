@@ -260,7 +260,7 @@ int	check_path(t_game *game)
 
 #pragma region[Check Map]
 
-void	set_player_pos(t_game *game)
+void	set_unit_pos(t_game *game)
 {
 	char	*map;
 	int		i;
@@ -270,10 +270,9 @@ void	set_player_pos(t_game *game)
 	while (map[i])
 	{
 		if (map[i] == 'P')
-		{
 			game->player.pos = i;
-			return ;
-		}
+		else if (map[i] == 'E')
+		 	game->exit.pos = i;
 		i++;
 	}
 }
@@ -346,7 +345,7 @@ int	check_map(t_game *game)
 	if (check_char('\0', game) == 0)
 		return (error_handle("check_map", "Map Error", 0).i);
 	game->map.len = ft_strlen(game->map.data);
-	set_player_pos(game);
+	set_unit_pos(game);
 	if (check_path(game) == 0)
 		return (error_handle("check_map", "No Path", 0).i);
 	return (1);
@@ -466,7 +465,6 @@ int	set_images(t_game *game)
 	char *path;
 
 	path = ft_strdup("textures/000000000.xpm");
-	path = 
 	if (path == NULL)
 		return (error_handle("set_images", "ft_strdup returned NULL", 0).i);
 	if (init_image(&game->map.img_f, "textures/f.xpm", game) == 0
@@ -545,6 +543,11 @@ void check_move(t_game *game, int dst)
 		{
 			game->map.data[dst] = '0';
 			game->collectible.count--;
+			if (game->collectible.count == 0)
+				mlx_put_image_to_window(game->mlx.mlx_ptr,
+					game->mlx.win_ptr, game->exit.img_o,
+					(game->exit.pos % (game->map.width + 1)) * PIXEL_SIZE,
+					(game->exit.pos / (game->map.width + 1)) * PIXEL_SIZE);
 		}
 		if (game->map.data[dst] == 'E' && game->collectible.count == 0)
 		{

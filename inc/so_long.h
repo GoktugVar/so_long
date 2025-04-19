@@ -40,6 +40,7 @@ typedef struct s_player
 
 typedef struct s_exit
 {
+	size_t	pos;
 	void	*img_o;
 	void	*img_c;
 }	t_exit;
