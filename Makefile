@@ -1,5 +1,7 @@
 NAME		= so_long
 
+CC			= cc
+
 INC_DIR		= inc
 SRC_DIR		= src
 BUILD_DIR	= build
@@ -7,12 +9,16 @@ BUILD_DIR	= build
 MLX_DIR		= minilibx
 MLX			= $(MLX_DIR)/libmlx.a
 
-SRCS		= so_long.c
+SRCS		= check_map.c check_path.c image_nodes.c key_hook.c \
+				print_map.c read_file.c set_images.c so_long.c \
+				start_mlx.c utils.c 
+
+
 VPATH		= src
 
 OBJS		= $(addprefix $(BUILD_DIR)/,$(SRCS:.c=.o))
 
-CFLAGS		= -Wall -Wextra -Werror -Wno-unknown-pragmas
+CFLAGS		= -Wall -Wextra -Werror -I$(INC_DIR) -I$(MLX_DIR)
 LDFLAGS		= -L$(MLX_DIR)
 LDLIBS		= -lmlx -lX11 -lXext
 RM			= rm -rf
